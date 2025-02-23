@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/google/shlex"
@@ -32,7 +33,20 @@ var (
 	noReverseLookup = flag.Bool("n", false, "disable reverse lookup of connecting PCAP-over-IP client IP address")
 	debug           = flag.Bool("debug", false, "enable debug logging")
 	json            = flag.Bool("json", false, "enable json logging")
+	whitelist       = flag.String("whitelist", "", "comma separated list of IP addresses to whitelist")
 )
+
+func isIPWhitelisted(ip string, whitelist []string) bool {
+	if len(whitelist) == 0 {
+		return true
+	}
+	for _, allowedIP := range whitelist {
+		if ip == allowedIP {
+			return true
+		}
+	}
+	return false
+}
 
 func Main() {
 	flag.Parse()
@@ -62,6 +76,11 @@ func Main() {
 		if *listenAddress == "" {
 			*listenAddress = "localhost:4242"
 		}
+	}
+
+	whitelistIPs := []string{}
+	if *whitelist != "" {
+		whitelistIPs = strings.Split(*whitelist, ",")
 	}
 
 	log.Debug().Str("pcapCommand", *pcapCommand).Send()
@@ -139,10 +158,19 @@ func Main() {
 
 	for {
 		conn, err := l.Accept()
+
 		if err != nil && ctx.Err() == nil {
 			log.Fatal().Err(err).Msg("failed to accept connection")
 		} else if errors.Is(ctx.Err(), context.Canceled) {
 			break
+		}
+
+		ipAddr := conn.RemoteAddr().(*net.TCPAddr).IP.String()
+
+		if !isIPWhitelisted(ipAddr, whitelistIPs) {
+			log.Warn().Msgf("Connection from %v rejected: IP not in whitelist", ipAddr)
+			conn.Close()
+			continue
 		}
 
 		if *noReverseLookup {

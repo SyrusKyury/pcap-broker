@@ -1,4 +1,4 @@
-module github.com/fox-it/pcap-broker
+module github.com/SyrusKyury/pcap-broker
 
 go 1.20
 
